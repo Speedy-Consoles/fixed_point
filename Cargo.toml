@@ -1,0 +1,11 @@
+[package]
+name = "fixed_point"
+version = "0.1.0"
+authors = ["Speedy Consoles <rubihome@gmx.de>"]
+edition = "2018"
+
+[dependencies]
+derive_more = "0.14.0"
+
+[dev-dependencies]
+cgmath = "0.17.0"
