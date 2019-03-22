@@ -25,7 +25,7 @@ const SIN_QUARTER_MASK: u64 = (!0) % SIN_QUARTER_RESOLUTION;
 const SIN_INTRA_MASK: u64 = (!0) % FP_SIN_RESOLUTION_RATIO;
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord,
-    Add, Sub, AddAssign, SubAssign, Rem, Neg)]
+    Add, AddAssign, Sub, SubAssign, Rem, RemAssign, Neg)]
 pub struct FixedPoint(i64);
 
 
@@ -180,7 +180,7 @@ impl fmt::Debug for FixedPoint {
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord,
-    Add, Sub, Mul, Div, AddAssign, SubAssign, Rem, Neg, From)]
+    Add, AddAssign, Sub, SubAssign, Neg, From)]
 pub struct FPAngle(FixedPoint);
 
 impl FPAngle {
@@ -263,7 +263,6 @@ impl fmt::Debug for FPAngle {
 mod tests {
     extern crate cgmath;
 
-    use cgmath::num_traits;
     use cgmath::Vector3;
 
     use crate::FixedPoint;
