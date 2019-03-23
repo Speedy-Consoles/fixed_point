@@ -68,14 +68,14 @@ impl FixedPoint {
         if self.0 <= 0 {
             panic!("Attempted to take inverse square root of non-positive number!");
         }
-        // TODO find better approximation
+        // TODO find better start value
         //eprintln!("starting inverse square root computation of {:?}", self);
         let shift = 64 - self.0.leading_zeros() as i64 - FP_PRECISION as i64;
         //eprintln!("shift: {}", shift);
         //eprintln!("sqrt_approx: {} ({})", FixedPoint(FP_PRECISION as i64 + shift / 2), Into::<f64>::into(*self).sqrt());
-        let mut approx = (1 << FP_PRECISION as i64 - shift / 2);
+        let mut approx = 1 << (FP_PRECISION as i64 - (shift >> 1));
         //eprintln!("approx: {} ({})", FixedPoint(approx), 1.0 / Into::<f64>::into(*self).sqrt());
-        for _ in 0..5 { // TODO relate number of iterations to FP_PRECISION
+        for _ in 0..4 { // TODO reduce iterations with better start value
             approx = fp_mul(THREE - fp_mul(fp_mul(self.0, approx), approx), approx) >> 1;
         }
         FixedPoint(approx)
@@ -627,7 +627,6 @@ impl fmt::Debug for FPVec3 {
 #[cfg(test)]
 mod tests {
     use crate::FixedPoint;
-    use crate::FP_PRECISION;
     use crate::FP_RESOLUTION;
 
     #[test]
