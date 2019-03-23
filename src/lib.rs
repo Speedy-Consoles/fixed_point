@@ -2,6 +2,10 @@ mod precalc;
 
 #[macro_use] extern crate derive_more;
 
+use std::ops::Add;
+use std::ops::AddAssign;
+use std::ops::Sub;
+use std::ops::SubAssign;
 use std::ops::Mul;
 use std::ops::MulAssign;
 use std::ops::Div;
@@ -9,6 +13,11 @@ use std::ops::DivAssign;
 use std::f32::consts::PI as PI32;
 use std::f64::consts::PI as PI64;
 use std::fmt;
+
+use cgmath::Vector3;
+use cgmath::Vector2;
+use cgmath::Point3;
+use cgmath::Point2;
 
 use self::precalc::SIN_PRECISION;
 use self::precalc::SIN;
@@ -54,14 +63,20 @@ impl FixedPoint {
     }
 
     // TODO make const
-    pub fn inv_sqrt(self) -> FixedPoint {
+    pub fn inv_sqrt(&self) -> FixedPoint {
         const THREE: i64 = FP_RESOLUTION as i64 * 3;
         if self.0 <= 0 {
             panic!("Attempted to take inverse square root of non-positive number!");
         }
-        let mut approx = FP_RESOLUTION as i64;
+        // TODO find better approximation
+        //eprintln!("starting inverse square root computation of {:?}", self);
+        let shift = 64 - self.0.leading_zeros() as i64 - FP_PRECISION as i64;
+        //eprintln!("shift: {}", shift);
+        //eprintln!("sqrt_approx: {} ({})", FixedPoint(FP_PRECISION as i64 + shift / 2), Into::<f64>::into(*self).sqrt());
+        let mut approx = (1 << FP_PRECISION as i64 - shift / 2);
+        //eprintln!("approx: {} ({})", FixedPoint(approx), 1.0 / Into::<f64>::into(*self).sqrt());
         for _ in 0..5 { // TODO relate number of iterations to FP_PRECISION
-            approx = fp_mul(approx, THREE - fp_mul(fp_mul(self.0, approx), approx)) >> 1;
+            approx = fp_mul(THREE - fp_mul(fp_mul(self.0, approx), approx), approx) >> 1;
         }
         FixedPoint(approx)
     }
@@ -78,9 +93,8 @@ impl FixedPoint {
         self.0 < 0
     }
 
-    // TODO make const
-    pub fn mix(self, other: FixedPoint, ratio: FixedPoint) -> FixedPoint {
-        self * (Self::one() - ratio) + other * ratio
+    pub const fn mix(self, other: FixedPoint, ratio: FixedPoint) -> FixedPoint {
+        FixedPoint(fp_mul(self.0, FP_RESOLUTION as i64 - ratio.0) + fp_mul(other.0, ratio.0))
     }
 }
 
@@ -151,6 +165,18 @@ impl DivAssign<i64> for FixedPoint {
 impl From<i64> for FixedPoint {
     fn from(value: i64) -> Self {
         FixedPoint::new(value)
+    }
+}
+
+impl From<f64> for FixedPoint {
+    fn from(value: f64) -> Self {
+        FixedPoint((value * FP_RESOLUTION as f64).round() as i64)
+    }
+}
+
+impl From<f32> for FixedPoint {
+    fn from(value: f32) -> Self {
+        FixedPoint((value as f64 * FP_RESOLUTION as f64).round() as i64)
     }
 }
 
@@ -246,6 +272,14 @@ impl FPAngle {
     }
 }
 
+impl Mul<FixedPoint> for FPAngle {
+    type Output = Self;
+
+    fn mul(self, rhs: FixedPoint) -> Self {
+        FPAngle(self.0 * rhs.0)
+    }
+}
+
 impl fmt::Display for FPAngle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let float: f64 = self.0.into();
@@ -259,16 +293,356 @@ impl fmt::Debug for FPAngle {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct FPVec2 {
+    pub x: FixedPoint,
+    pub y: FixedPoint,
+}
+
+impl FPVec2 {
+    pub const fn new(x: FixedPoint, y: FixedPoint) -> FPVec2 {
+        FPVec2 { x, y }
+    }
+
+    pub const fn zero() -> FPVec2 {
+        FPVec2 { x: FixedPoint::zero(), y: FixedPoint::zero() }
+    }
+
+    pub const fn dot(&self, other: FPVec2) -> FixedPoint {
+        FixedPoint(fp_mul(self.x.0, other.x.0) + fp_mul(self.y.0, other.y.0))
+    }
+
+    pub const fn length2(&self) -> FixedPoint {
+        self.dot(*self)
+    }
+
+    // TODO make const
+    pub fn scale_to(&self, length: FixedPoint) -> FPVec2 {
+        let fp_length = fp_mul(length.0, self.length2().inv_sqrt().0);
+        FPVec2 {
+            x: FixedPoint(self.x.0 * fp_length),
+            y: FixedPoint(self.y.0 * fp_length),
+        }
+    }
+
+    // TODO make const
+    pub fn is_zero(&self) -> bool {
+        self.x.is_zero() && self.y.is_zero()
+    }
+}
+
+impl Add for FPVec2 {
+    type Output = FPVec2;
+
+    fn add(self, other: FPVec2) -> Self::Output {
+        FPVec2 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+        }
+    }
+}
+
+impl Sub for FPVec2 {
+    type Output = FPVec2;
+
+    fn sub(self, other: Self) -> FPVec2 {
+        FPVec2 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+        }
+    }
+}
+
+impl Mul<FixedPoint> for FPVec2 {
+    type Output = FPVec2;
+
+    fn mul(self, rhs: FixedPoint) -> FPVec2 {
+        FPVec2 {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
+    }
+}
+
+impl Mul<FPVec2> for FixedPoint {
+    type Output = FPVec2;
+
+    fn mul(self, rhs: FPVec2) -> FPVec2 {
+        FPVec2 {
+            x: self * rhs.x,
+            y: self * rhs.y,
+        }
+    }
+}
+
+impl MulAssign<FixedPoint> for FPVec2 {
+    fn mul_assign(&mut self, rhs: FixedPoint) {
+        self.x *= rhs;
+        self.y *= rhs;
+    }
+}
+
+impl Div<FixedPoint> for FPVec2 {
+    type Output = FPVec2;
+
+    fn div(self, rhs: FixedPoint) -> FPVec2 {
+        FPVec2 {
+            x: self.x / rhs,
+            y: self.y / rhs,
+        }
+    }
+}
+
+impl DivAssign<FixedPoint> for FPVec2 {
+    fn div_assign(&mut self, rhs: FixedPoint) {
+        self.x /= rhs;
+        self.y /= rhs;
+    }
+}
+
+impl AddAssign for FPVec2 {
+    fn add_assign(&mut self, other: FPVec2) {
+        self.x += other.x;
+        self.y += other.y;
+    }
+}
+
+impl SubAssign for FPVec2 {
+    fn sub_assign(&mut self, other: FPVec2) {
+        self.x -= other.x;
+        self.y -= other.y;
+    }
+}
+
+impl Into<Vector2<f32>> for FPVec2 {
+    fn into(self) -> Vector2<f32> {
+        Vector2::new(
+            self.x.into(),
+            self.y.into(),
+        )
+    }
+}
+
+impl Into<Point2<f32>> for FPVec2 {
+    fn into(self) -> Point2<f32> {
+        Point2::new(
+            self.x.into(),
+            self.y.into(),
+        )
+    }
+}
+
+impl fmt::Display for FPVec2 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "v({}, {})", self.x, self.y)
+    }
+}
+
+impl fmt::Debug for FPVec2 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct FPVec3 {
+    pub x: FixedPoint,
+    pub y: FixedPoint,
+    pub z: FixedPoint,
+}
+
+impl FPVec3 {
+    pub const fn new(x: FixedPoint, y: FixedPoint, z: FixedPoint) -> FPVec3 {
+        FPVec3 { x, y, z }
+    }
+
+    pub const fn zero() -> FPVec3 {
+        FPVec3 { x: FixedPoint::zero(), y: FixedPoint::zero(), z: FixedPoint::zero() }
+    }
+
+    pub const fn dot(&self, other: FPVec3) -> FixedPoint {
+        FixedPoint(
+              fp_mul(self.x.0, other.x.0)
+            + fp_mul(self.y.0, other.y.0)
+            + fp_mul(self.z.0, other.z.0)
+        )
+    }
+
+    pub const fn cross(&self, other: FPVec3) -> FPVec3 {
+        FPVec3 {
+            x: FixedPoint(fp_mul(self.y.0, other.z.0) - fp_mul(self.z.0, other.y.0)),
+            y: FixedPoint(fp_mul(self.z.0, other.x.0) - fp_mul(self.x.0, other.z.0)),
+            z: FixedPoint(fp_mul(self.x.0, other.y.0) - fp_mul(self.y.0, other.x.0)),
+        }
+    }
+
+    pub const fn length2(&self) -> FixedPoint {
+        self.dot(*self)
+    }
+
+    // TODO make const
+    pub fn scale_to(&self, length: FixedPoint) -> FPVec3 {
+        let fp_length = fp_mul(length.0, self.length2().inv_sqrt().0);
+        FPVec3 {
+            x: FixedPoint(self.x.0 * fp_length),
+            y: FixedPoint(self.y.0 * fp_length),
+            z: FixedPoint(self.z.0 * fp_length),
+        }
+    }
+
+    // TODO make const
+    pub fn is_zero(&self) -> bool {
+        self.x.is_zero() && self.y.is_zero() && self.z.is_zero()
+    }
+
+    pub fn xy(&self) -> FPVec2 {
+        FPVec2 { x: self.x, y: self.y }
+    }
+}
+
+impl Add for FPVec3 {
+    type Output = FPVec3;
+
+    fn add(self, other: FPVec3) -> Self::Output {
+        FPVec3 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
+    }
+}
+
+impl Sub for FPVec3 {
+    type Output = FPVec3;
+
+    fn sub(self, other: Self) -> FPVec3 {
+        FPVec3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
+    }
+}
+
+impl Mul<FixedPoint> for FPVec3 {
+    type Output = FPVec3;
+
+    fn mul(self, rhs: FixedPoint) -> FPVec3 {
+        FPVec3 {
+            x: self.x * rhs,
+            y: self.y * rhs,
+            z: self.z * rhs,
+        }
+    }
+}
+
+impl Mul<FPVec3> for FixedPoint {
+    type Output = FPVec3;
+
+    fn mul(self, rhs: FPVec3) -> FPVec3 {
+        FPVec3 {
+            x: self * rhs.x,
+            y: self * rhs.y,
+            z: self * rhs.z,
+        }
+    }
+}
+
+impl MulAssign<FixedPoint> for FPVec3 {
+    fn mul_assign(&mut self, rhs: FixedPoint) {
+        self.x *= rhs;
+        self.y *= rhs;
+        self.z *= rhs;
+    }
+}
+
+impl Div<FixedPoint> for FPVec3 {
+    type Output = FPVec3;
+
+    fn div(self, rhs: FixedPoint) -> FPVec3 {
+        FPVec3 {
+            x: self.x / rhs,
+            y: self.y / rhs,
+            z: self.z / rhs,
+        }
+    }
+}
+
+impl DivAssign<FixedPoint> for FPVec3 {
+    fn div_assign(&mut self, rhs: FixedPoint) {
+        self.x /= rhs;
+        self.y /= rhs;
+        self.z /= rhs;
+    }
+}
+
+impl AddAssign for FPVec3 {
+    fn add_assign(&mut self, other: FPVec3) {
+        self.x += other.x;
+        self.y += other.y;
+        self.z += other.z;
+    }
+}
+
+impl SubAssign for FPVec3 {
+    fn sub_assign(&mut self, other: FPVec3) {
+        self.x -= other.x;
+        self.y -= other.y;
+        self.z -= other.z;
+    }
+}
+
+impl Into<Vector3<f32>> for FPVec3 {
+    fn into(self) -> Vector3<f32> {
+        Vector3::new(
+            self.x.into(),
+            self.y.into(),
+            self.z.into(),
+        )
+    }
+}
+
+impl Into<Point3<f32>> for FPVec3 {
+    fn into(self) -> Point3<f32> {
+        Point3::new(
+            self.x.into(),
+            self.y.into(),
+            self.z.into(),
+        )
+    }
+}
+
+impl fmt::Display for FPVec3 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "v({}, {}, {})", self.x, self.y, self.z)
+    }
+}
+
+impl fmt::Debug for FPVec3 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, f)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    extern crate cgmath;
-
-    use cgmath::Vector3;
-
     use crate::FixedPoint;
+    use crate::FP_PRECISION;
+    use crate::FP_RESOLUTION;
 
     #[test]
-    fn create_vector() {
-        let v: Vector3<FixedPoint> = Vector3::new(FixedPoint(0), FixedPoint(0), FixedPoint(0));
+    fn test_inv_sqrt() {
+        for x in 500..40000 {
+            let fixed = FixedPoint((x as f64).powf(3.1415) as i64);
+            let fixed_is = fixed.inv_sqrt();
+            let float = Into::<f64>::into(fixed);
+            let float_is = 1.0 / Into::<f64>::into(fixed).sqrt();
+            let diff = Into::<f64>::into(fixed_is) - float_is;
+            assert!(
+                diff.abs() < 2.0 / FP_RESOLUTION as f64,
+                "Inverse square root error too big:\n{}.inv_sqrt(): {}\n1.0 / {}.sqrt(): {}\ndiff.: {}",
+                fixed, fixed_is, float, float_is, diff
+            );
+        }
     }
 }
