@@ -317,12 +317,17 @@ impl FPVec2 {
     }
 
     // TODO make const
-    pub fn scale_to(&self, length: FixedPoint) -> FPVec2 {
-        let fp_length = fp_mul(length.0, self.length2().inv_sqrt().0);
+    pub fn scaled_to(&self, length: FixedPoint) -> FPVec2 {
+        let fp_inv_length = fp_mul(length.0, self.length2().inv_sqrt().0);
         FPVec2 {
-            x: FixedPoint(self.x.0 * fp_length),
-            y: FixedPoint(self.y.0 * fp_length),
+            x: FixedPoint(fp_mul(self.x.0, fp_inv_length)),
+            y: FixedPoint(fp_mul(self.y.0, fp_inv_length)),
         }
+    }
+
+    // TODO make const
+    pub fn normalized(&self) -> FPVec2 {
+        self.scaled_to(FixedPoint::one())
     }
 
     // TODO make const
@@ -481,13 +486,18 @@ impl FPVec3 {
     }
 
     // TODO make const
-    pub fn scale_to(&self, length: FixedPoint) -> FPVec3 {
-        let fp_length = fp_mul(length.0, self.length2().inv_sqrt().0);
+    pub fn scaled_to(&self, length: FixedPoint) -> FPVec3 {
+        let fp_inv_length = fp_mul(length.0, self.length2().inv_sqrt().0);
         FPVec3 {
-            x: FixedPoint(self.x.0 * fp_length),
-            y: FixedPoint(self.y.0 * fp_length),
-            z: FixedPoint(self.z.0 * fp_length),
+            x: FixedPoint(fp_mul(self.x.0, fp_inv_length)),
+            y: FixedPoint(fp_mul(self.y.0, fp_inv_length)),
+            z: FixedPoint(fp_mul(self.z.0, fp_inv_length)),
         }
+    }
+
+    // TODO make const
+    pub fn normalized(&self) -> FPVec3 {
+        self.scaled_to(FixedPoint::one())
     }
 
     // TODO make const
